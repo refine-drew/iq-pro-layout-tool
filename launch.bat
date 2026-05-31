@@ -1,8 +1,8 @@
 @echo off
-title CNC Nest Tool
+title IQ Pro Layout Tool
 cd /d "%~dp0"
 echo ===================================
-echo   CNC Nest Tool
+echo   IQ Pro Layout Tool
 echo ===================================
 echo.
 
@@ -39,7 +39,7 @@ start /b cmd /c "timeout /t 3 /nobreak >nul && start http://localhost:5001"
 
 echo Starting server...
 echo.
-echo CNC Nest Tool is running at http://localhost:5001
+echo IQ Pro Layout Tool is running at http://localhost:5001
 echo Close this window to stop the server.
 echo.
 

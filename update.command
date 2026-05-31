@@ -2,7 +2,7 @@
 cd "$(dirname "$0")"
 
 echo "==================================="
-echo "  CNC Nest Tool — Update"
+echo "  IQ Pro Layout Tool — Update"
 echo "==================================="
 echo ""
 

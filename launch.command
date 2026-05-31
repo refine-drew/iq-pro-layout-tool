@@ -2,7 +2,7 @@
 cd "$(dirname "$0")"
 
 echo "==================================="
-echo "  CNC Nest Tool"
+echo "  IQ Pro Layout Tool"
 echo "==================================="
 echo ""
 
@@ -67,7 +67,7 @@ fi
 open http://localhost:5001
 
 echo ""
-echo "CNC Nest Tool is running at http://localhost:5001"
+echo "IQ Pro Layout Tool is running at http://localhost:5001"
 echo "Close this window to stop the server."
 echo ""
 

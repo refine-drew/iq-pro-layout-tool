@@ -1,4 +1,4 @@
-CNC Nest Tool
+IQ Pro Layout Tool
 =============
 Optimize CNC cutting layouts on a 5×10 ft dual-rail bed.
 Load VCarve G-code files, drag parts onto A/B rails, detect collisions,
@@ -13,8 +13,8 @@ WINDOWS SETUP
 2. Install Git from git-scm.com
 
 3. Open Command Prompt and run:
-   git clone https://github.com/refine-drew/cnc-nest-app.git
-   cd cnc-nest-app
+   git clone https://github.com/refine-drew/iq-pro-layout-tool.git
+   cd iq-pro-layout-tool
 
 4. Double-click launch.bat
 
@@ -33,8 +33,8 @@ MAC SETUP
    xcode-select --install
 
 3. In Terminal:
-   git clone https://github.com/refine-drew/cnc-nest-app.git
-   cd cnc-nest-app
+   git clone https://github.com/refine-drew/iq-pro-layout-tool.git
+   cd iq-pro-layout-tool
    chmod +x launch.command
 
 4. Double-click launch.command

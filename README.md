@@ -1,7 +1,12 @@
-# CNC Nest Tool
+# IQ Pro Layout Tool
 
-Optimize CNC cutting layouts on a 5×10 ft dual-rail bed.
-Load VCarve G-code files, drag parts onto A/B rails, detect collisions,
+> ⚠️ **Temporary, disposable fork.** This is the single-rail variant of the production
+> [`cnc-nest-app`](https://github.com/refine-drew/cnc-nest-app), built for the temporary
+> single-rail machine. **Bug fixes here are NOT auto-shared with the production tool**, and
+> vice versa. Archive/delete this repo when the machine is sold.
+
+Optimize CNC cutting layouts for the single-rail bed.
+Load VCarve/`.MMG` G-code files, drag parts onto the rail, detect collisions,
 and generate a merged master G-code file.
 
 ---
@@ -19,7 +24,7 @@ and generate a merged master G-code file.
 
 3. **Clone the repo** in Terminal:
    ```
-   git clone https://github.com/refine-drew/cnc-nest-app.git
+   git clone https://github.com/refine-drew/iq-pro-layout-tool.git
    ```
 
 4. **Double-click `launch.command`** inside the cloned folder.
@@ -37,7 +42,7 @@ and generate a merged master G-code file.
 
 3. **Clone the repo** in Command Prompt:
    ```
-   git clone https://github.com/refine-drew/cnc-nest-app.git
+   git clone https://github.com/refine-drew/iq-pro-layout-tool.git
    ```
 
 4. **Double-click `launch.bat`** inside the cloned folder.

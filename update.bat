@@ -1,8 +1,8 @@
 @echo off
-title CNC Nest Tool — Update
+title IQ Pro Layout Tool — Update
 cd /d "%~dp0"
 echo ===================================
-echo   CNC Nest Tool — Update
+echo   IQ Pro Layout Tool — Update
 echo ===================================
 echo.
 
