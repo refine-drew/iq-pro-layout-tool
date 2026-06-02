@@ -1,8 +1,10 @@
 IQ Pro Layout Tool
 =============
-Optimize CNC cutting layouts on a 5×10 ft dual-rail bed.
-Load VCarve G-code files, drag parts onto A/B rails, detect collisions,
-and generate a merged master G-code file.
+Temporary single-rail fork for the Laguna IQ ATC machine (disposable; not auto-synced
+with the production cnc-nest-app).
+Optimize CNC cutting layouts on a single-rail 54x24 in bed.
+Load VCarve/.MMG G-code files, drag parts onto the rail's 13" slots, detect collisions,
+and generate a merged master .mmg file.
 
 
 WINDOWS SETUP

@@ -7,11 +7,11 @@ each blank to confirm orientation). A placement table + job summary carry over
 every field the old .txt report contained.
 
 Orientation matches the on-screen canvas (static/bed.js): the operator stands at
-the right (machine Y = 0), the A rail runs along the bottom (machine X = 0), the
-B rail along the top. Machine→page mapping (PDF origin is lower-left):
+the right (machine Y = 0), the single rail runs along the bottom (machine X = 0).
+Machine→page mapping (PDF origin is lower-left):
 
     page_x = ox + (BED_Y - machine_y) * s     # operator (Y=0) at right
-    page_y = oy + machine_x * s               # A rail (X=0) at bottom
+    page_y = oy + machine_x * s               # rail (X=0) at bottom
 
 This module does no coordinate math beyond that final mapping — callers pass part
 blanks and toolpath segments already in machine coordinates.
@@ -161,21 +161,16 @@ def _draw_diagram(c, x0, y0, w, h, parts, geom) -> None:
     def P(mach_x, mach_y):
         return (ox + (BED_Y - mach_y) * s, oy + mach_x * s)
 
-    # Rail zones.
+    # Rail zone (single rail along the bottom, machine X = 0).
     c.saveState()
     c.setFillColor(HexColor("#1e50b4"))
     c.setFillAlpha(0.16)
     c.rect(ox, oy, draw_w, rail_w * s, fill=1, stroke=0)
-    c.setFillColor(HexColor("#1ea03c"))
-    c.setFillAlpha(0.15)
-    c.rect(ox, oy + draw_h - rail_w * s, draw_w, rail_w * s, fill=1, stroke=0)
     c.restoreState()
 
     c.setFillColor(HexColor("#1e50b4"))
-    c.setFont("Helvetica-Bold", 11)
-    c.drawString(ox + 3, oy + 3, "A")
-    c.setFillColor(HexColor("#1ea03c"))
-    c.drawString(ox + 3, oy + draw_h - 13, "B")
+    c.setFont("Helvetica-Bold", 9)
+    c.drawString(ox + 3, oy + 3, "Rail")
 
     c.setStrokeColor(black)
     c.setLineWidth(1.0)
@@ -188,7 +183,7 @@ def _draw_diagram(c, x0, y0, w, h, parts, geom) -> None:
     c.setFillColor(HexColor("#555555"))
     for slot in geom.get("slots", []):
         slot = float(slot)
-        mach_y = (120.0 - slot - edge_margin_in) * 25.4
+        mach_y = BED_Y - (slot + edge_margin_in) * 25.4
         px = ox + (BED_Y - mach_y) * s
         c.line(px, oy - 3, px, oy - 9)
         c.drawCentredString(px, oy - 17, f"{slot:g}")

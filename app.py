@@ -27,8 +27,8 @@ _instance_counts: Dict[str, int] = {}   # filename stem → counter for unique I
 VALID_EXT = {".nc", ".mmg"}
 MAX_FILE_BYTES = 10 * 1024 * 1024  # 10 MB
 
-_PITCH_13 = {0, 13, 26, 39, 52, 65, 78, 91, 104, 117}
-_PITCH_195 = {0, 19.5, 39, 58.5, 78, 97.5, 117}
+# Single rail — every slot sits on the machine's 13" T-track pitch.
+RAIL_ID = "A"
 
 
 # ── private helpers ───────────────────────────────────────────────────────────
@@ -54,6 +54,10 @@ def _bed_x() -> float:
     return float(config["advanced"]["bed_x_mm"])
 
 
+def _bed_y() -> float:
+    return float(config["advanced"]["bed_y_mm"])
+
+
 def _edge_margin_in() -> float:
     return float(config["advanced"].get("slot_edge_margin_in", 1.5))
 
@@ -64,9 +68,29 @@ def _make_instance_id(filename: str) -> str:
     return f"{stem}_{_instance_counts[stem]}"
 
 
+def _seed_part_tools(part: GcodePart) -> None:
+    """Ensure every tool referenced by a pass has an entry in part.tools with a
+    resolved diameter. VCarve .nc files carry their own (T#=...) defs; IQ ATC
+    .mmg files don't, so backfill from the configured tool library — otherwise
+    collision clearance (cutter radius) and the tool UI see no diameter."""
+    library = ToolLibrary(config.get("tools", {}))
+    for gp in part.passes:
+        tn = gp.tool_number.upper()
+        info = part.tools.setdefault(tn, {})
+        if info.get("diameter_inches") is None:
+            dia = library.resolve_diameter(tn)
+            if dia is not None:
+                info["diameter_inches"] = dia
+        if not info.get("description"):
+            cfg_tool = library.get_tool(tn)
+            info["description"] = (cfg_tool or {}).get("name", "")
+
+
 def _parse_file(abs_path: str) -> GcodePart:
     p = Path(abs_path)
-    return parse_vcarve_text(p.read_text(encoding="utf-8", errors="replace"), filename=p.name)
+    part = parse_vcarve_text(p.read_text(encoding="utf-8", errors="replace"), filename=p.name)
+    _seed_part_tools(part)
+    return part
 
 
 def _part_dict(part: GcodePart, rel_path: str = "") -> dict:
@@ -93,32 +117,23 @@ def _part_dict(part: GcodePart, rel_path: str = "") -> dict:
 
 
 def _transform_segments(
-    segs: list, rail: str, slot_inches: float,
-    rail_width_mm: float, bed_x_mm: float,
+    segs: list, slot_inches: float,
+    rail_width_mm: float, bed_y_mm: float,
     edge_margin_in: float = 0.0,
 ) -> list:
     """
     Convert file-coordinate segments to machine coordinates for canvas rendering.
-    Mirrors the generator transform (gcode_generator._transform_params): both rails
-    are proper rotations (one file axis mirrored each).
+    Mirrors the generator transform (gcode_generator._transform_params).
     file_Y → machine X (vertical),  file_X → machine Y (horizontal)
-    A rail:  machX = rail_w + fileY             machY = slot_mark - fileX
-    B rail:  machX = (BED_X-rail_w) - fileY     machY = slot_mark + fileX
+    Single rail:  machX = rail_w + fileY        machY = slot_mark - fileX
     """
-    slot_mark = (120.0 - slot_inches - edge_margin_in) * 25.4
+    slot_mark = bed_y_mm - (slot_inches + edge_margin_in) * 25.4
     result = []
     for s in segs:
-        if rail == "A":
-            x1 = rail_width_mm + s["y1"]
-            y1 = slot_mark - s["x1"]
-            x2 = rail_width_mm + s["y2"]
-            y2 = slot_mark - s["x2"]
-        else:
-            far_x = bed_x_mm - rail_width_mm
-            x1 = far_x - s["y1"]
-            y1 = slot_mark + s["x1"]
-            x2 = far_x - s["y2"]
-            y2 = slot_mark + s["x2"]
+        x1 = rail_width_mm + s["y1"]
+        y1 = slot_mark - s["x1"]
+        x2 = rail_width_mm + s["y2"]
+        y2 = slot_mark - s["x2"]
         result.append({
             "x1": round(x1, 3), "y1": round(y1, 3),
             "x2": round(x2, 3), "y2": round(y2, 3),
@@ -128,14 +143,13 @@ def _transform_segments(
 
 
 def _placement_dict(instance_id: str, placed: PlacedPart) -> dict:
-    br = blank_rect(placed, _rail_width(), _bed_x(), _edge_margin_in())
+    br = blank_rect(placed, _rail_width(), _bed_x(), _bed_y(), _edge_margin_in())
     rel = _placement_paths.get(instance_id, placed.part.filename)
     segments = _transform_segments(
         placed.part.segments,
-        placed.rail,
         placed.slot_inches,
         _rail_width(),
-        _bed_x(),
+        _bed_y(),
         _edge_margin_in(),
     )
     tools_list = [
@@ -274,7 +288,7 @@ def _build_pdf_model(job_name: str, settings: dict, gcode: str = "") -> tuple:
     machine coordinates (via blank_rect / _transform_segments), and a stable
     per-filename color matching the on-screen canvas palette.
     """
-    rail_w, bed_x, edge = _rail_width(), _bed_x(), _edge_margin_in()
+    rail_w, bed_x, bed_y, edge = _rail_width(), _bed_x(), _bed_y(), _edge_margin_in()
 
     # Stable color per unique filename, assigned in first-seen order (bed.js).
     color_idx: Dict[str, int] = {}
@@ -285,7 +299,7 @@ def _build_pdf_model(job_name: str, settings: dict, gcode: str = "") -> tuple:
         fn = placed.part.filename
         if fn not in color_idx:
             color_idx[fn] = len(color_idx)
-        br = blank_rect(placed, rail_w, bed_x, edge)
+        br = blank_rect(placed, rail_w, bed_x, bed_y, edge)
         for num in (gp.tool_number for gp in placed.part.passes):
             tools_seen[num] = True
         parts.append({
@@ -297,8 +311,8 @@ def _build_pdf_model(job_name: str, settings: dict, gcode: str = "") -> tuple:
             "size_mm": (placed.part.vcarve_x_span, placed.part.vcarve_y_span),
             "blank": (br.min_x, br.max_x, br.min_y, br.max_y),
             "segments": _transform_segments(
-                placed.part.segments, placed.rail, placed.slot_inches,
-                rail_w, bed_x, edge,
+                placed.part.segments, placed.slot_inches,
+                rail_w, bed_y, edge,
             ),
             "tools": [
                 {"tool_number": num,
@@ -377,21 +391,16 @@ def api_config_post():
 @app.route("/api/slots")
 def api_slots():
     edge_margin = _edge_margin_in()
+    bed_y = _bed_y()
     result = []
     for s in config["advanced"]["slots"]:
         s = float(s)
-        pitches = []
-        if s in _PITCH_13:
-            pitches.append("13")
-        if s in _PITCH_195:
-            pitches.append("19.5")
         label = int(s) if s == int(s) else s
         result.append({
             "inches": s,
-            "label_a": f"A{label}",
-            "label_b": f"B{label}",
-            "machine_y": round((120 - s - edge_margin) * 25.4, 4),
-            "pitch": pitches,
+            "label": f"{label}",
+            "machine_y": round(bed_y - (s + edge_margin) * 25.4, 4),
+            "pitch": ["13"],
         })
     return jsonify({"slots": result})
 
@@ -480,11 +489,11 @@ def api_placements_get():
 def api_place():
     data = request.get_json(force=True) or {}
     rel = data.get("path", "").strip()
-    rail = data.get("rail", "").upper()
     slot_raw = data.get("slot_inches")
 
-    if not rel or rail not in ("A", "B") or slot_raw is None:
-        return jsonify({"error": "path, rail (A/B), and slot_inches required"}), 400
+    if not rel or slot_raw is None:
+        return jsonify({"error": "path and slot_inches required"}), 400
+    rail = RAIL_ID  # single rail
     try:
         slot_inches = float(slot_raw)
     except (TypeError, ValueError):
@@ -517,7 +526,7 @@ def api_place():
     instance_id = _make_instance_id(part.filename)
     new_placed = PlacedPart(part=part, rail=rail, slot_inches=slot_inches, instance_id=instance_id)
 
-    result = check_placement(new_placed, list(_placements.values()), _rail_width(), _bed_x(), _edge_margin_in())
+    result = check_placement(new_placed, list(_placements.values()), _rail_width(), _bed_x(), _bed_y(), _edge_margin_in())
     if result.collides:
         # Roll back the instance counter
         stem = os.path.splitext(part.filename)[0]
@@ -615,10 +624,10 @@ def api_generate():
         return jsonify({"error": f"Generation failed: {e}"}), 500
 
     out = _output_dir()
-    nc_path = out / f"{job_name}.nc"
+    mmg_path = out / f"{job_name}.mmg"
     pdf_path = out / f"{job_name}.pdf"
 
-    nc_path.write_text(gcode, encoding="utf-8")
+    mmg_path.write_text(gcode, encoding="utf-8")
     try:
         meta, parts, geom = _build_pdf_model(job_name, settings, gcode)
         generate_layout_pdf(pdf_path, meta, parts, geom)
@@ -626,7 +635,7 @@ def api_generate():
         return jsonify({"error": f"PDF generation failed: {e}"}), 500
 
     return jsonify({"ok": True, "job_name": job_name,
-                    "nc_path": str(nc_path), "pdf_path": str(pdf_path)})
+                    "nc_path": str(mmg_path), "pdf_path": str(pdf_path)})
 
 
 @app.route("/api/save-job", methods=["POST"])
@@ -688,7 +697,7 @@ def api_load_job():
 
     for entry in job.get("placements", []):
         rel = entry.get("path") or entry.get("filename", "")
-        rail = entry.get("rail", "A").upper()
+        rail = RAIL_ID  # single rail — ignore any saved A/B
         slot_inches = float(entry.get("slot_inches", 0))
         instance_id = entry.get("instance_id", "")
 

@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What This App Does
 
-CNC Nest is a Flask web app for optimizing CNC cutting layouts on a 5×10 ft dual-rail bed. Users load VCarve G-code files from a library folder, drag-place parts onto A/B rails, get live collision detection, then generate a merged master G-code file that combines all parts using order-of-operations (grouping cuts by tool across all parts).
+IQ Pro Layout Tool is a Flask web app for optimizing CNC cutting layouts on a **single-rail 54×24 in bed** (Laguna IQ ATC machine). It is a disposable fork of the dual-rail `cnc-nest-app` (see the README banner). Users load VCarve/`.MMG` G-code files from a library folder, drag-place parts onto the single rail's 13"-pitch slots, get live collision detection, then generate a merged master `.mmg` file that combines all parts using order-of-operations (grouping cuts by tool across all parts).
 
 ## Commands
 
@@ -37,13 +37,13 @@ No build step, linter, or type checker is configured.
 
 **`gcode_parser.py`** — parses `.nc`/`.mmg` VCarve G-code files into `GcodePart` dataclasses. Extracts blank dimensions, material thickness, tool info, XYZ bounding boxes per pass, and validates Z depths.
 
-**`collision.py`** — rectangle overlap collision detection. Handles the two coordinate systems: A rail uses additive XY offsets; B rail applies 180° rotation (mirroring) around the bed center before offset.
+**`collision.py`** — rectangle overlap collision detection. The single rail uses additive XY offsets from the slot mark (see Coordinate Systems below).
 
 **`gcode_generator.py`** — merges placed parts into a single master G-code. Walks tool passes in order-of-operations sequence (all T1 cuts across all parts, then all T2, etc.), applies coordinate transforms matching `collision.py`, and uses nearest-neighbor sorting to minimize rapid travel.
 
 **`tool_library.py`** — simple tool registry. Resolves tool diameters from file headers or user-supplied overrides.
 
-**`config.py`** — loads/saves `config.json`. Config defines library path, output path, tool definitions, bed dimensions (default 1524×3048 mm / 60×120 in), rail width, safe Z, and slot positions.
+**`config.py`** — loads/saves `config.json`. Config defines library path, output path, tool definitions, bed dimensions (609.6×1371.6 mm / 24×54 in; `bed_y_mm` is the along-rail axis), rail width, safe Z, and slot positions (`[0, 13, 26, 39]` in, 13" pitch).
 
 ### Frontend (Vanilla JS + Canvas)
 
@@ -59,13 +59,18 @@ No framework, no bundler. Files in `/static/`:
 
 1. User picks library folder → `/api/load-library` → `gcode_parser` → populates `_loaded` → sidebar tree
 2. User drags part to bed slot → `/api/place` → `collision.py` validates → adds to `_placements` → bed canvas redraws
-3. User clicks Generate → `/api/generate` → `gcode_generator` merges all `_placements` → writes `.nc` + `.txt` report
+3. User clicks Generate → `/api/generate` → `gcode_generator` merges all `_placements` → writes `.mmg` + `.pdf` report
 4. Save/load state persists `_placements` + `_loaded` as a `.cnj` JSON file
 
 ### Coordinate Systems
 
-This is the trickiest part of the codebase. A rail and B rail have different transforms:
-- **A rail**: part origin is translated by `(slot_x_offset, rail_a_y_offset)` — additive
-- **B rail**: part is rotated 180° (X and Y flipped relative to blank size) then translated — used for cutting the other side of a workpiece without re-fixturing
+VCarve file axes map to machine axes with the file X axis mirrored (a proper 180°-class
+rotation, det(Jacobian) = +1):
+- file_X → machine Y (along the rail): `machine_Y = slot_mark - file_X`, where
+  `slot_mark = bed_y_mm - (slot_inches + edge_margin_in) * 25.4`
+- file_Y → machine X (across the bed): `machine_X = rail_width_mm + file_Y` — additive
 
-Both `collision.py` and `gcode_generator.py` must apply identical transforms or placements will collide in reality but not in simulation.
+`collision.py` (`_machine_y`, `blank_rect`, `toolpath_rect`), `app.py` (`_transform_segments`),
+and `gcode_generator.py` (`_transform_params`) must apply identical transforms, or placements
+will collide in reality but not in simulation. The internal rail id is always `"A"` (the dual-rail
+B path was removed in this fork).

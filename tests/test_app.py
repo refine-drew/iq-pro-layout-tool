@@ -65,42 +65,33 @@ def test_slots_returns_all_positions(client):
     assert r.status_code == 200
     slots = r.get_json()["slots"]
     inches = [s["inches"] for s in slots]
-    assert 0 in inches
-    assert 39 in inches
-    assert 117 in inches
-    assert 19.5 in inches
+    # Single rail, 13" pitch: [0, 13, 26, 39]
+    assert inches == [0, 13, 26, 39]
 
 
 def test_slots_machine_y_calculation(client):
     r = client.get("/api/slots")
     slots = {s["inches"]: s for s in r.get_json()["slots"]}
-    # Slots are shifted inward by slot_edge_margin_in (default 1.5") for overtravel.
-    # A0 → (120 - 0 - 1.5) * 25.4 = 3009.9
-    assert slots[0]["machine_y"] == pytest.approx(3009.9)
-    # A39 → (120 - 39 - 1.5) * 25.4 = 2019.3
-    assert slots[39]["machine_y"] == pytest.approx(2019.3)
+    # 54" rail; slots shifted inward by slot_edge_margin_in (1.5") for overtravel.
+    # slot 0  → 1371.6 - (0  + 1.5) * 25.4 = 1333.5
+    assert slots[0]["machine_y"] == pytest.approx(1333.5)
+    # slot 39 → 1371.6 - (39 + 1.5) * 25.4 = 342.9
+    assert slots[39]["machine_y"] == pytest.approx(342.9)
 
 
 def test_slots_pitch_labels(client):
     r = client.get("/api/slots")
     slots = {s["inches"]: s for s in r.get_json()["slots"]}
-    # 39 is in both pitch systems
-    assert "13" in slots[39]["pitch"]
-    assert "19.5" in slots[39]["pitch"]
-    # 13 is only 13" pitch
-    assert "13" in slots[13]["pitch"]
-    assert "19.5" not in slots[13]["pitch"]
-    # 19.5 is only 19.5" pitch
-    assert "19.5" in slots[19.5]["pitch"]
-    assert "13" not in slots[19.5]["pitch"]
+    # Single 13" pitch for every slot; the 19.5" system is gone.
+    for s in slots.values():
+        assert s["pitch"] == ["13"]
 
 
 def test_slots_labels(client):
     r = client.get("/api/slots")
     slots = {s["inches"]: s for s in r.get_json()["slots"]}
-    assert slots[39]["label_a"] == "A39"
-    assert slots[39]["label_b"] == "B39"
-    assert slots[19.5]["label_a"] == "A19.5"
+    assert slots[39]["label"] == "39"
+    assert slots[0]["label"] == "0"
 
 
 # ── /api/library ──────────────────────────────────────────────────────────────
@@ -206,10 +197,13 @@ def test_place_invalid_slot_rejected(client, tmp_path, monkeypatch):
     assert r.status_code == 400
 
 
-def test_place_invalid_rail_rejected(client, tmp_path, monkeypatch):
+def test_place_ignores_rail_field_single_rail(client, tmp_path, monkeypatch):
+    # Single-rail machine: the rail field is ignored; placement always lands on the
+    # one rail (internal id "A").
     _seed_library(tmp_path, monkeypatch)
     r = client.post("/api/place", json={"path": "part.nc", "rail": "C", "slot_inches": 39})
-    assert r.status_code == 400
+    assert r.status_code == 200
+    assert r.get_json()["rail"] == "A"
 
 
 def test_place_blocked_file_rejected(client, tmp_path, monkeypatch):
@@ -224,18 +218,17 @@ def test_place_blocked_file_rejected(client, tmp_path, monkeypatch):
 
 
 def test_place_collision_returns_409(client, tmp_path, monkeypatch):
-    # VCarve X = along rail = machine Y. A toolpath with X=-5000 extends far toward
-    # higher machine Y, reaching adjacent slots.
-    # Part at slot 52 (slot_mark=1727.2): toolpath min_y = 1727.2 - max_vx.
-    # With max_vx=500, min_y = 1727.2-500=1227.2 (doesn't reach slot 39 blank at 1857.4-2057.4).
-    # But with min_vx=-400, toolpath max_y = slot_mark - min_vx = 1727.2+400=2127.2 > 1857.4 → collision!
+    # VCarve X = along rail = machine Y. A toolpath that extends far toward higher
+    # machine Y (min_vx=-400) reaches the adjacent slot's blank.
+    # Placed at slot 26 then slot 39 (13" apart): the slot-39 part's toolpath
+    # (max_y = slot_mark + 400) overlaps the slot-26 part's blank → collision.
     oversized = (
         "( Material Size)\n( X= 200.0, Y= 100.0, Z= 19.05)\n"
         "(T2 = End Mill {0.5 inches})\nT2 M06\n"
         "G01 X100 Y10 Z-0.254\nG01 X-400 Y10 Z-0.254\nM30\n"
     )
     _seed_library(tmp_path, monkeypatch, {"big.nc": oversized})
-    client.post("/api/place", json={"path": "big.nc", "rail": "A", "slot_inches": 52})
+    client.post("/api/place", json={"path": "big.nc", "rail": "A", "slot_inches": 26})
     r = client.post("/api/place", json={"path": "big.nc", "rail": "A", "slot_inches": 39})
     assert r.status_code == 409
     assert r.get_json()["error"] == "collision"
