@@ -257,7 +257,7 @@ def validate_z(
             status="blocked",
             messages=[
                 f"This file uses top-of-material Z reference (min Z = {min_z / 25.4:.3f}\"). "
-                "The Smartshop 2 expects spoilboard Z reference. "
+                "The IQ Pro expects spoilboard Z reference. "
                 "Re-export through VCarve with 'Z origin = top of spoilboard' selected. "
                 "Running this file as-is would crash the cutter into the spoilboard."
             ],
