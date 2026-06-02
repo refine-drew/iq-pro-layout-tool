@@ -37,8 +37,8 @@ PALETTE = [
     "#74c0fc", "#63e6be", "#ffa94d", "#da77f2", "#4dabf7",
 ]
 
-# ATC graphic: 8-position tool holder carousel
-_ATC_SLOTS    = 8
+# ATC graphic: 5-position tool holder carousel (IQ Pro changer capacity)
+_ATC_SLOTS    = 5
 _ATC_SLOT_W   = 86          # width of each holder slot (pt)
 _ATC_SLOT_GAP = 4           # gap between slots (pt)
 _ATC_TITLE_H  = 16          # height reserved for section title
@@ -244,7 +244,7 @@ def _draw_part(c, P, part) -> None:
 # ── ATC tool holder graphic ───────────────────────────────────────────────────
 
 def _draw_atc(c, parts, pw: float, y_top: float) -> None:
-    """8-position ATC carousel graphic. y_top is the top edge of the section."""
+    """5-position ATC carousel graphic. y_top is the top edge of the section."""
     tools: dict = {}
     for part in parts:
         for t in part.get("tools") or []:

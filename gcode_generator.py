@@ -42,6 +42,8 @@ def generate_master_gcode(placements: List[PlacedPart], settings: Dict) -> str:
     bed_y = float(adv["bed_y_mm"])
     edge_margin_in = float(adv.get("slot_edge_margin_in", 0.0))
     tool_capacity = int(adv.get("tool_capacity", 5))
+    park_x = adv.get("park_x_mm")
+    park_y = adv.get("park_y_mm")
     job_name = settings.get("job_name", "master_job")
     safe_z_info = settings.get("job_safe_z") or {}
     job_safe_z = float(safe_z_info.get("value") or adv.get("safe_z_clearance_mm", 25.4))
@@ -102,8 +104,16 @@ def generate_master_gcode(placements: List[PlacedPart], settings: Dict) -> str:
         out += [
             "",
             f"( ---- {tool} pass {block_num} ---- )",
-            N(f"{tool} M06"),
         ]
+        # Rich Auto controller quirk: after an M06 it rapids back to whatever XY
+        # the spindle last held. If that was a cut at the far end of the bed it
+        # traverses the whole bed (300 ipm max) for nothing, twice. Park next to
+        # the changer first so the post-change rapid is short. Z is already safe:
+        # the prior block's trailing retract, or machine startup height for the
+        # first change.
+        if park_x is not None and park_y is not None:
+            out.append(N(f"G00 X{float(park_x):.4f} Y{float(park_y):.4f}"))
+        out.append(N(f"{tool} M06"))
         if block["description"]:
             out.append(N(f"({block['description']})"))
         out.append(N(f"M03 S{block['spindle_speed']}"))
@@ -124,11 +134,18 @@ def generate_master_gcode(placements: List[PlacedPart], settings: Dict) -> str:
         ]
 
     # ── park and end ──────────────────────────────────────────────────────────
-    # IQ ATC dialect: retract Z, stop spindle, end. No G53 XY park.
+    # IQ ATC dialect: retract Z, rapid to the configured park XY (if set), stop
+    # spindle, end. The park XY is a plain G00 in work coordinates (no G53):
+    # X = across the bed, Y = along the rail, both in mm — matching the
+    # generated motion words and the ( Material Size) block above.
     out += [
         "",
         "( ---- park ---- )",
         N(f"G00 Z{job_safe_z:.4f}"),
+    ]
+    if park_x is not None and park_y is not None:
+        out.append(N(f"G00 X{float(park_x):.4f} Y{float(park_y):.4f}"))
+    out += [
         N("M05"),
         N("M30"),
         "%",

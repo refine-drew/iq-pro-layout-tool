@@ -6,7 +6,7 @@ and current XYZ. Sums cutting time (distance / feedrate) and rapid time
 (distance / rapid rate), plus a fixed seconds-per-tool-change cost.
 
 Per project convention:
-  - Default rapid rate: 1800 in/min (Smartshop 2).
+  - Default rapid rate: 300 in/min (Laguna IQ Pro).
   - Default tool change: 30 s per T# M06.
   - Z-only G1 plunges are ignored (treated as zero time).
   - F-words and coordinates are interpreted under the currently-modal units;
@@ -35,7 +35,7 @@ _G70_PATTERN = re.compile(r"\bG70\b")
 _G71_PATTERN = re.compile(r"\bG71\b")
 
 MM_PER_INCH = 25.4
-DEFAULT_RAPID_MM_PER_MIN = 1800.0 * MM_PER_INCH   # 1800 in/min
+DEFAULT_RAPID_MM_PER_MIN = 300.0 * MM_PER_INCH   # 300 in/min (Laguna IQ Pro)
 DEFAULT_TOOL_CHANGE_SECONDS = 30.0
 
 

@@ -353,6 +353,46 @@ def test_output_park_is_z_retract_no_g53():
     assert "G00 Z25.4000" in park
 
 
+def test_output_park_includes_xy_when_configured():
+    # With park_x_mm/park_y_mm set, the end-of-job park rapids to that XY in work
+    # coords (plain G00, no G53). X = across the bed, Y = along the rail.
+    settings = {**SETTINGS, "advanced": {**SETTINGS["advanced"],
+                                          "park_x_mm": 179.499,
+                                          "park_y_mm": 1394.501}}
+    p = _placed(SINGLE_T2, "A", 39)
+    result = generate_master_gcode([p], settings)
+    park = result[result.index("( ---- park ---- )"):]
+    assert "G53" not in park
+    assert "G00 X179.4990 Y1394.5010" in park
+
+
+def test_park_before_each_tool_change_when_configured():
+    # Rich Auto returns to the last spindle XY after an M06, so every tool change
+    # must be immediately preceded by a rapid to the park XY (next to the changer)
+    # to avoid a full-bed traverse on the post-change rapid.
+    settings = {**SETTINGS, "advanced": {**SETTINGS["advanced"],
+                                          "park_x_mm": 179.499,
+                                          "park_y_mm": 1394.501}}
+    p1 = _placed(TWO_PASS_T2_T4, "A", 39, "i1")
+    p2 = _placed(TWO_PASS_T2_T4, "A", 26, "i2")
+    result = generate_master_gcode([p1, p2], settings)
+    lines = [l for l in result.splitlines() if l.strip()]
+    park_line = "G00 X179.4990 Y1394.5010"
+    for i, l in enumerate(lines):
+        if "M06" in l:
+            assert park_line in lines[i - 1], f"M06 at line {i} not preceded by park"
+    # Two tool blocks (T2, T4) + one end-of-job park = 3 park rapids total.
+    assert result.count(park_line) == 3
+
+
+def test_no_park_before_tool_change_when_unconfigured():
+    # Without park coords there is nowhere defined to retreat to; emit no extra
+    # rapid (preserves prior behaviour / the bare-SETTINGS tests).
+    p = _placed(TWO_PASS_T2_T4, "A", 39)
+    result = generate_master_gcode([p], SETTINGS)
+    assert "Y1394" not in result
+
+
 def test_output_has_line_numbers():
     p = _placed(SINGLE_T2, "A", 39)
     result = generate_master_gcode([p], SETTINGS)

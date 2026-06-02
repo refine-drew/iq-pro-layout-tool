@@ -44,21 +44,21 @@ def test_rapid_move_metric_default_units():
 
 
 def test_rapid_move_inches_after_g70():
-    # G70 → inches. 100 in = 2540 mm at 1800 in/min = 100/1800 min = 3.333... s
+    # G70 → inches. 100 in at 300 in/min = 100/300 min = 20 s
     result = estimate_lines_runtime(["G70", "G00 X100 Y0"])
-    assert result["rapid"] == pytest.approx(100 / 1800 * 60, rel=1e-6)
+    assert result["rapid"] == pytest.approx(100 / 300 * 60, rel=1e-6)
 
 
 def test_rapid_move_metric_after_g21():
-    # 25.4 mm = 1 inch. Rapid = 25.4 mm / (1800 * 25.4 mm/min) * 60 = 1/1800 * 60 = 0.0333... s
+    # 25.4 mm = 1 inch. Rapid = 25.4 mm / (300 * 25.4 mm/min) * 60 = 1/300 * 60 = 0.2 s
     result = estimate_lines_runtime(["G21", "G00 X25.4 Y0"])
-    assert result["rapid"] == pytest.approx(60 / 1800, rel=1e-6)
+    assert result["rapid"] == pytest.approx(60 / 300, rel=1e-6)
 
 
 def test_rapid_move_metric_after_g71():
     # G71 is the controller's metric code (Fanuc/ISO dialect) — same effect as G21.
     result = estimate_lines_runtime(["G71", "G00 X25.4 Y0"])
-    assert result["rapid"] == pytest.approx(60 / 1800, rel=1e-6)
+    assert result["rapid"] == pytest.approx(60 / 300, rel=1e-6)
 
 
 # ── G1 cutting moves ──────────────────────────────────────────────────────────
