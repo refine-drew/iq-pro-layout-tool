@@ -18,7 +18,7 @@ document.addEventListener("DOMContentLoaded", () => {
       if (data.ok) {
         App.setMessage(`Saved: ${data.nc_path} (+ layout PDF)`, false);
       } else {
-        App.setMessage(data.error || "Generation failed", true);
+        App.setMessage(data.message || data.error || "Generation failed", true);
       }
     } catch (e) {
       App.setMessage("Generation failed: " + e.message, true);

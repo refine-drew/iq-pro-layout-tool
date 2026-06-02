@@ -43,7 +43,9 @@ No build step, linter, or type checker is configured.
 
 **`tool_library.py`** — simple tool registry. Resolves tool diameters from file headers or user-supplied overrides.
 
-**`config.py`** — loads/saves `config.json`. Config defines library path, output path, tool definitions, bed dimensions (609.6×1371.6 mm / 24×54 in; `bed_y_mm` is the along-rail axis), rail width, safe Z, and slot positions (`[0, 13, 26, 39]` in, 13" pitch).
+**`config.py`** — loads/saves `config.json`. Config defines library path, output path, tool definitions, bed dimensions (609.6×1371.6 mm / 24×54 in; `bed_y_mm` is the along-rail axis), rail width (82.55 mm = 3.25"), `tool_capacity` (IQ Pro changer holds 5; generation is blocked above this), safe Z, and slot positions (`[0, 13, 26, 39]` in, 13" pitch).
+
+The generated `.mmg` mirrors the Laguna IQ ATC VECTRIC post header: `N0 (Filename: ...)`, `N10 (Machine: Laguna IQ ATC)`, a `( Material Size)` block (`( X= <bed_x>, Y= <bed_y>, Z= <thickest stock>)`), then `G54`; footer is `G00 Z<safe>` / `M05` / `M30` / `%`. See `SampleFile.mmg` for the reference format.
 
 ### Frontend (Vanilla JS + Canvas)
 

@@ -317,6 +317,7 @@ def test_generate_writes_nc_and_pdf(client, tmp_path, monkeypatch):
     data = r.get_json()
     assert data["ok"] is True
     assert os.path.isfile(data["nc_path"])
+    assert data["nc_path"].endswith(".mmg")   # IQ ATC output extension
     assert data["pdf_path"].endswith(".pdf")
     assert os.path.isfile(data["pdf_path"])
     with open(data["pdf_path"], "rb") as f:
@@ -337,6 +338,34 @@ def test_generate_blocked_by_tool_conflict(client, tmp_path, monkeypatch):
     client.post("/api/place", json={"path": "b.nc", "rail": "A", "slot_inches": 26})
     r = client.post("/api/generate", json={})
     assert r.status_code == 422
+
+
+def test_generate_blocked_when_over_tool_capacity(client, tmp_path, monkeypatch):
+    # Two parts using two distinct tools; with capacity forced to 1, generation
+    # must be rejected (the IQ Pro tool changer can't hold them all).
+    file_a = (
+        "( Material Size)\n( X=100, Y=100, Z=19)\n"
+        "(T2 = End Mill {0.5 inches})\nT2 M06\nG01 X10 Y10 Z-0.254\nM30\n"
+    )
+    file_b = (
+        "( Material Size)\n( X=100, Y=100, Z=19)\n"
+        "(T4 = Table Stiff {0.75 inches})\nT4 M06\nG01 X10 Y10 Z-0.254\nM30\n"
+    )
+    _seed_library(tmp_path, monkeypatch, {"a.nc": file_a, "b.nc": file_b})
+    monkeypatch.setitem(app_module.config["advanced"], "tool_capacity", 1)
+    client.post("/api/place", json={"path": "a.nc", "rail": "A", "slot_inches": 39})
+    client.post("/api/place", json={"path": "b.nc", "rail": "A", "slot_inches": 0})
+    r = client.post("/api/generate", json={})
+    assert r.status_code == 422
+    assert r.get_json()["error"] == "tool_capacity_exceeded"
+
+
+def test_placements_reports_tool_capacity(client, tmp_path, monkeypatch):
+    _seed_library(tmp_path, monkeypatch)
+    client.post("/api/place", json={"path": "part.nc", "rail": "A", "slot_inches": 39})
+    data = client.get("/api/placements").get_json()
+    assert data["tool_capacity"] == 5
+    assert data["tools_over_capacity"] is False
 
 
 # ── /api/save-job and /api/load-job ──────────────────────────────────────────
