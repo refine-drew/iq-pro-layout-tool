@@ -360,12 +360,41 @@ def _output_dir() -> Path:
     return d
 
 
-def _timestamp() -> str:
-    return datetime.now().strftime("%Y%m%d_%H%M%S")
+_B36_DIGITS = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+
+
+def _b36(n: int, width: int = 2) -> str:
+    """Encode a non-negative int as a fixed-width base-36 string."""
+    s = ""
+    while n:
+        n, r = divmod(n, 36)
+        s = _B36_DIGITS[r] + s
+    return s.rjust(width, "0")
+
+
+def _auto_job_name() -> str:
+    """Generate a 6-char output name: MMDD + a 2-char base-36 daily counter.
+
+    The controller can't handle long file names, so auto names are capped at six
+    characters. The suffix is the lowest unused 00..ZZ slot for today's date,
+    found by scanning the output dir — so it survives restarts and never clobbers
+    an existing file. Example: 060700, 060701, … 06072S.
+    """
+    mmdd = datetime.now().strftime("%m%d")
+    out = _output_dir()
+    taken = {p.stem for ext in ("mmg", "pdf", "cnj")
+             for p in out.glob(f"{mmdd}??.{ext}")}
+    for i in range(36 * 36):  # 00..ZZ → 1,296 jobs/day
+        name = f"{mmdd}{_b36(i)}"
+        if name not in taken:
+            return name
+    # Exhausted all 1,296 slots for the day (unlikely) — reuse slot 00.
+    return f"{mmdd}{_b36(0)}"
 
 
 def _job_name(data: dict) -> str:
-    return data.get("job_name") or config["job_name_format"].replace("{timestamp}", _timestamp())
+    # User-supplied names pass through verbatim (uncapped); blank → 6-char auto.
+    return data.get("job_name") or _auto_job_name()
 
 
 # ── routes ────────────────────────────────────────────────────────────────────
