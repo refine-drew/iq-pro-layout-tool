@@ -1,5 +1,9 @@
+from math import hypot
+
 import pytest
-from gcode_parser import parse_vcarve_text, validate_z, GcodePass
+from gcode_parser import (
+    parse_vcarve_text, validate_z, GcodePass, extract_file_segments, _arc_points,
+)
 
 # --- fixtures ---
 
@@ -335,3 +339,77 @@ def test_extract_tools_description_excludes_tool_prefix():
     assert desc == "End Mill {.75 inches}"
     assert "T4" not in desc
     assert "=" not in desc
+
+
+# --- arc flattening (G02/G03 → line segments for canvas preview) ---
+
+def _chain_is_continuous(segs):
+    for a, b in zip(segs, segs[1:]):
+        if (a["x2"], a["y2"]) != (b["x1"], b["y1"]):
+            return False
+    return True
+
+
+def test_arc_points_r_format_quarter_circle_on_radius():
+    # G03 (ccw) quarter circle: (1,0) -> (0,1), R=1, center (0,0).
+    pts = _arc_points(1.0, 0.0, 0.0, 1.0, r=1.0, clockwise=False)
+    assert len(pts) > 4                       # smoothly subdivided, not a chord
+    assert pts[-1] == (0.0, 1.0)              # exact endpoint
+    for x, y in pts:
+        assert hypot(x, y) == pytest.approx(1.0, abs=1e-9)
+
+
+def test_arc_points_negative_r_selects_major_arc():
+    # Same endpoints, R<0 → the long way around (sweep > pi). The two radius-1
+    # circles through (1,0) and (0,1) have centers (0,0) and (1,1); the minor arc
+    # rides the (0,0) circle, the major arc rides the (1,1) circle.
+    minor = _arc_points(1.0, 0.0, 0.0, 1.0, r=1.0, clockwise=False)
+    major = _arc_points(1.0, 0.0, 0.0, 1.0, r=-1.0, clockwise=False)
+    assert len(major) > len(minor)            # 270° gets more points than 90°
+    for x, y in minor:
+        assert hypot(x, y) == pytest.approx(1.0, abs=1e-9)
+    for x, y in major:
+        assert hypot(x - 1.0, y - 1.0) == pytest.approx(1.0, abs=1e-9)
+
+
+def test_arc_points_degenerate_r_falls_back_to_chord():
+    # R-format can't express a full circle (coincident endpoints) → single chord.
+    assert _arc_points(5.0, 5.0, 5.0, 5.0, r=2.0, clockwise=True) == [(5.0, 5.0)]
+
+
+def _segs(*lines):
+    return extract_file_segments([GcodePass(pass_index=0, tool_number="T2", lines=list(lines))])
+
+
+def test_extract_segments_flattens_arc_into_many_segments():
+    segs = _segs("G01 X1 Y0 Z-1", "G03 X0 Y1 R1")
+    arc = segs[1:]                            # first seg is the G01 lead-in
+    assert len(arc) > 4
+    assert _chain_is_continuous(arc)
+    assert (arc[0]["x1"], arc[0]["y1"]) == (1.0, 0.0)
+    assert (arc[-1]["x2"], arc[-1]["y2"]) == (0.0, 1.0)
+
+
+def test_extract_segments_linear_move_stays_single_segment():
+    segs = _segs("G01 X10 Y20 Z-1")
+    assert len(segs) == 1
+    assert segs[0]["x2"] == 10.0 and segs[0]["y2"] == 20.0
+
+
+def test_extract_segments_arc_inherits_missing_axis():
+    # Real 18p.nc shape: arc line carries X but no Y → Y inherits current value.
+    segs = _segs("G01 X150.8196 Y396.3586 Z-1", "G03 X153.9804 R1.5915")
+    arc = segs[1:]
+    assert (arc[0]["x1"], arc[0]["y1"]) == pytest.approx((150.8196, 396.3586))
+    # End: X overwritten, Y inherited.
+    assert (arc[-1]["x2"], arc[-1]["y2"]) == pytest.approx((153.9804, 396.3586))
+    assert len(arc) > 1                       # a real curve, not collapsed to a point
+
+
+def test_extract_segments_full_circle_from_two_semicircles_spans_diameter():
+    # Lanyard-hole style: two R-format arcs forming a closed loop, diameter 2.
+    segs = _segs("G01 X1 Y0 Z-1", "G03 X-1 Y0 R1", "G03 X1 Y0 R1")
+    xs = [s["x1"] for s in segs] + [s["x2"] for s in segs]
+    ys = [s["y1"] for s in segs] + [s["y2"] for s in segs]
+    assert max(xs) - min(xs) == pytest.approx(2.0, abs=1e-6)
+    assert max(ys) - min(ys) == pytest.approx(2.0, abs=1e-6)  # not collapsed flat
