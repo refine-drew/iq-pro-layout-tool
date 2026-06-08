@@ -44,6 +44,11 @@ def generate_master_gcode(placements: List[PlacedPart], settings: Dict) -> str:
     tool_capacity = int(adv.get("tool_capacity", 5))
     park_x = adv.get("park_x_mm")
     park_y = adv.get("park_y_mm")
+    # Fence-origin offset: the machine's fence 00 differs from its working-area 00.
+    # Shift every output coordinate by this constant so cuts land in the right place.
+    # x_off_mm → machine X (across bed, output X word); y_off_mm → machine Y (along rail, output Y word).
+    x_off_mm = float(adv.get("fence_offset_x_in", 0.0)) * 25.4
+    y_off_mm = float(adv.get("fence_offset_y_in", 0.0)) * 25.4
     job_name = settings.get("job_name", "master_job")
     safe_z_info = settings.get("job_safe_z") or {}
     job_safe_z = float(safe_z_info.get("value") or adv.get("safe_z_clearance_mm", 25.4))
@@ -95,7 +100,7 @@ def generate_master_gcode(placements: List[PlacedPart], settings: Dict) -> str:
     ]
 
     # ── tool blocks ───────────────────────────────────────────────────────────
-    blocks = _build_blocks(placements, rail_w, bed_y, edge_margin_in)
+    blocks = _build_blocks(placements, rail_w, bed_y, edge_margin_in, x_off_mm, y_off_mm)
 
     for block_num, block in enumerate(blocks, start=1):
         tool = block["tool"]
@@ -112,7 +117,7 @@ def generate_master_gcode(placements: List[PlacedPart], settings: Dict) -> str:
         # the prior block's trailing retract, or machine startup height for the
         # first change.
         if park_x is not None and park_y is not None:
-            out.append(N(f"G00 X{float(park_x):.4f} Y{float(park_y):.4f}"))
+            out.append(N(f"G00 X{float(park_x) + x_off_mm:.4f} Y{float(park_y) + y_off_mm:.4f}"))
         out.append(N(f"{tool} M06"))
         if block["description"]:
             out.append(N(f"({block['description']})"))
@@ -144,7 +149,7 @@ def generate_master_gcode(placements: List[PlacedPart], settings: Dict) -> str:
         N(f"G00 Z{job_safe_z:.4f}"),
     ]
     if park_x is not None and park_y is not None:
-        out.append(N(f"G00 X{float(park_x):.4f} Y{float(park_y):.4f}"))
+        out.append(N(f"G00 X{float(park_x) + x_off_mm:.4f} Y{float(park_y) + y_off_mm:.4f}"))
     out += [
         N("M05"),
         N("M30"),
@@ -157,7 +162,8 @@ def generate_master_gcode(placements: List[PlacedPart], settings: Dict) -> str:
 # ── block building ────────────────────────────────────────────────────────────
 
 def _build_blocks(placements: List[PlacedPart], rail_w: float, bed_y: float,
-                  edge_margin_in: float = 0.0) -> list:
+                  edge_margin_in: float = 0.0,
+                  x_off_mm: float = 0.0, y_off_mm: float = 0.0) -> list:
     """
     Produce an ordered list of tool blocks from all placements.
 
@@ -188,7 +194,8 @@ def _build_blocks(placements: List[PlacedPart], rail_w: float, bed_y: float,
                 if spd:
                     spindle_speed = spd
                 body = _extract_body(raw_lines)
-                params = _transform_params(placed, rail_w, bed_y, edge_margin_in)
+                params = _transform_params(placed, rail_w, bed_y, edge_margin_in,
+                                           x_off_mm, y_off_mm)
                 segs.append([_transform_line(ln, params) for ln in body])
 
             if blocks and blocks[-1]["tool"] == tool:
@@ -276,7 +283,8 @@ def _extract_body(lines: List[str]) -> List[str]:
 # ── coordinate transformation ─────────────────────────────────────────────────
 
 def _transform_params(placed: PlacedPart, rail_w: float, bed_y: float,
-                      edge_margin_in: float = 0.0) -> dict:
+                      edge_margin_in: float = 0.0,
+                      x_off_mm: float = 0.0, y_off_mm: float = 0.0) -> dict:
     """
     Pre-compute per-placement transform constants (single rail, additive offset).
 
@@ -289,10 +297,14 @@ def _transform_params(placed: PlacedPart, rail_w: float, bed_y: float,
 
       output_X = slot_mark - vcarve_X        (G-code X = machine Y, reversed)
       output_Y = rail_w + vcarve_Y           (G-code Y = machine X, additive)
+
+    x_off_mm / y_off_mm are the fence-origin offsets (machine X / machine Y). The
+    output Y word carries machine Y, so y_off_mm folds into the slot_mark constant
+    ('x'); the output X word carries machine X, so x_off_mm folds into rail_w ('y').
     """
     slot_mark = bed_y - (placed.slot_inches + edge_margin_in) * 25.4
-    return {"b_x": True,  "x": slot_mark,
-            "b_y": False, "y": rail_w}
+    return {"b_x": True,  "x": slot_mark + y_off_mm,
+            "b_y": False, "y": rail_w + x_off_mm}
 
 
 def _transform_line(line: str, p: dict) -> str:
