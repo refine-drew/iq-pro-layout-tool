@@ -124,6 +124,15 @@ def _placed(nc_text, rail, slot_inches, instance_id="i1"):
     return PlacedPart(part=part, rail=rail, slot_inches=slot_inches, instance_id=instance_id)
 
 
+def _cuts(result):
+    """Region before the end-of-job park block — holds only cut-pass tool changes.
+
+    The park block always emits one extra `T2 M06` (the machine's fixed
+    end-of-program tool), so tests that count cut-pass tool changes must exclude it.
+    """
+    return result[:result.index("( ---- park ---- )")]
+
+
 # ── _extract_body ─────────────────────────────────────────────────────────────
 
 def test_extract_body_returns_moves_only():
@@ -347,10 +356,25 @@ def test_output_park_is_z_retract_no_g53():
     p = _placed(SINGLE_T2, "A", 39)
     result = generate_master_gcode([p], SETTINGS)
     assert "( ---- park ---- )" in result
-    # IQ ATC dialect: park is a plain Z retract + M05/M30, no G53 XY park move.
+    # IQ ATC dialect: park is a plain Z retract + T2 change + M05/M30, no G53 XY park move.
     assert "G53" not in result
     park = result[result.index("( ---- park ---- )"):]
     assert "G00 Z25.4000" in park
+    # End-of-job tool change comes after the Z retract (matches SampleFile.mmg).
+    assert "T2 M06" in park
+    assert park.index("G00 Z25.4000") < park.index("T2 M06")
+
+
+def test_park_changes_to_t2_before_xy():
+    # The native Laguna post ends with T2 M06 then a rapid to park XY. The tool
+    # change must precede the park-XY move in the generated footer.
+    settings = {**SETTINGS, "advanced": {**SETTINGS["advanced"],
+                                          "park_x_mm": 179.499,
+                                          "park_y_mm": 1394.501}}
+    p = _placed(SINGLE_T2, "A", 39)
+    result = generate_master_gcode([p], settings)
+    park = result[result.index("( ---- park ---- )"):]
+    assert park.index("T2 M06") < park.index("G00 X179.4990 Y1394.5010")
 
 
 def test_output_park_includes_xy_when_configured():
@@ -376,11 +400,14 @@ def test_park_before_each_tool_change_when_configured():
     p1 = _placed(TWO_PASS_T2_T4, "A", 39, "i1")
     p2 = _placed(TWO_PASS_T2_T4, "A", 26, "i2")
     result = generate_master_gcode([p1, p2], settings)
-    lines = [l for l in result.splitlines() if l.strip()]
     park_line = "G00 X179.4990 Y1394.5010"
-    for i, l in enumerate(lines):
+    # Cut-pass tool changes: each must be immediately preceded by a park rapid.
+    # The end-of-job park T2 M06 is the reverse (park rapid follows it), so it is
+    # excluded here by checking only the region before the park block.
+    cut_lines = [l for l in _cuts(result).splitlines() if l.strip()]
+    for i, l in enumerate(cut_lines):
         if "M06" in l:
-            assert park_line in lines[i - 1], f"M06 at line {i} not preceded by park"
+            assert park_line in cut_lines[i - 1], f"M06 at line {i} not preceded by park"
     # Two tool blocks (T2, T4) + one end-of-job park = 3 park rapids total.
     assert result.count(park_line) == 3
 
@@ -419,7 +446,7 @@ def test_output_has_no_g43():
 def test_output_single_tool_block_for_single_part():
     p = _placed(SINGLE_T2, "A", 39)
     result = generate_master_gcode([p], SETTINGS)
-    assert result.count("T2 M06") == 1
+    assert _cuts(result).count("T2 M06") == 1
     assert result.count("M05") == 2  # one in tool block, one in park
 
 
@@ -475,7 +502,7 @@ def test_two_parts_same_tool_merged():
     p1 = _placed(SINGLE_T2, "A", 39, "i1")
     p2 = _placed(SINGLE_T2, "A", 26, "i2")
     result = generate_master_gcode([p1, p2], SETTINGS)
-    assert result.count("T2 M06") == 1
+    assert _cuts(result).count("T2 M06") == 1
 
 
 def test_two_parts_same_tool_has_retract_between_segments():
@@ -501,8 +528,8 @@ def test_two_parts_two_passes_merged():
     p1 = _placed(TWO_PASS_T2_T4, "A", 39, "i1")
     p2 = _placed(TWO_PASS_T2_T4, "A", 26, "i2")
     result = generate_master_gcode([p1, p2], SETTINGS)
-    assert result.count("T2 M06") == 1
-    assert result.count("T4 M06") == 1
+    assert _cuts(result).count("T2 M06") == 1
+    assert _cuts(result).count("T4 M06") == 1
     # T2 must come before T4
     assert result.index("T2 M06") < result.index("T4 M06")
 
@@ -515,8 +542,8 @@ def test_spec_example_t2_t4_t2_merged():
     p1 = _placed(THREE_PASS_T2_T4_T2, "A", 39, "i1")
     p2 = _placed(THREE_PASS_T2_T4_T2, "A", 26, "i2")
     result = generate_master_gcode([p1, p2], SETTINGS)
-    assert result.count("T2 M06") == 2   # pass 1 and pass 3
-    assert result.count("T4 M06") == 1   # pass 2
+    assert _cuts(result).count("T2 M06") == 2   # pass 1 and pass 3
+    assert _cuts(result).count("T4 M06") == 1   # pass 2
     # Order: T2 → T4 → T2
     t2_first = result.index("T2 M06")
     t4_pos = result.index("T4 M06")
@@ -541,9 +568,9 @@ def test_spec_example_different_tools_not_merged():
     p1 = _placed(three_pass, "A", 39, "i1")
     p2 = _placed(two_pass_t5, "A", 26, "i2")
     result = generate_master_gcode([p1, p2], SETTINGS)
-    assert result.count("T2 M06") == 2
-    assert result.count("T4 M06") == 1
-    assert result.count("T5 M06") == 1
+    assert _cuts(result).count("T2 M06") == 2
+    assert _cuts(result).count("T4 M06") == 1
+    assert _cuts(result).count("T5 M06") == 1
     # Order: T2 → T4 → T5 → T2
     t2_a = result.index("T2 M06")
     t4_pos = result.index("T4 M06")
@@ -564,14 +591,16 @@ def test_exactly_five_tools_is_allowed():
     five = _nc([(f"T{i}", f"Tool{i}", 0.25) for i in range(1, 6)])
     p = _placed(five, "A", 39)
     result = generate_master_gcode([p], SETTINGS)
-    assert result.count("M06") == 5
+    assert _cuts(result).count("M06") == 5
 
 
 def test_no_placements_produces_header_and_park():
     result = generate_master_gcode([], SETTINGS)
     assert "(Machine:  Laguna IQ ATC)" in result
     assert "M30" in result
-    assert result.count("M06") == 0  # no tool changes
+    assert _cuts(result).count("M06") == 0  # no cut-pass tool changes
+    # The park block still emits the machine's fixed end-of-job tool change.
+    assert "T2 M06" in result[result.index("( ---- park ---- )"):]
 
 
 # ── _build_blocks (unit) ──────────────────────────────────────────────────────

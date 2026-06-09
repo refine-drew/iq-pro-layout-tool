@@ -139,14 +139,19 @@ def generate_master_gcode(placements: List[PlacedPart], settings: Dict) -> str:
         ]
 
     # ── park and end ──────────────────────────────────────────────────────────
-    # IQ ATC dialect: retract Z, rapid to the configured park XY (if set), stop
-    # spindle, end. The park XY is a plain G00 in work coordinates (no G53):
-    # X = across the bed, Y = along the rail, both in mm — matching the
-    # generated motion words and the ( Material Size) block above.
+    # IQ ATC dialect: retract Z, change to the end-of-job tool (T2), rapid to the
+    # configured park XY (if set), stop spindle, end. The native Laguna VECTRIC
+    # post (see SampleFile.mmg) always ends with a T2 M06 before parking, so the
+    # spindle is left holding the changer's fixed end-of-program tool. The prior
+    # tool block already emitted a trailing M05, so the spindle is stopped here.
+    # The park XY is a plain G00 in work coordinates (no G53): X = across the bed,
+    # Y = along the rail, both in mm — matching the generated motion words and the
+    # ( Material Size) block above.
     out += [
         "",
         "( ---- park ---- )",
         N(f"G00 Z{job_safe_z:.4f}"),
+        N("T2 M06"),
     ]
     if park_x is not None and park_y is not None:
         out.append(N(f"G00 X{float(park_x) + x_off_mm:.4f} Y{float(park_y) + y_off_mm:.4f}"))
