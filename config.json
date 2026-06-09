@@ -1,5 +1,7 @@
 {
-  "library_path": "'/Users/drewhogenkamp/Desktop/IQ Pro Production CNC Library'",
+  "library_path": [
+    "/Users/drewhogenkamp/Library/CloudStorage/GoogleDrive-refineproductsshop@gmail.com/.shortcut-targets-by-id/1QkzLwR8jRUPXY3ttFj7jWhmH79iWfmL5/Production/IQ Pro Production CNC Library"
+  ],
   "output_path": "~/Downloads",
   "job_name_format": "nest_{timestamp}",
   "tools": {
