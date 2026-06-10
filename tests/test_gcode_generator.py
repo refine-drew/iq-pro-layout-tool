@@ -365,16 +365,18 @@ def test_output_park_is_z_retract_no_g53():
     assert park.index("G00 Z25.4000") < park.index("T2 M06")
 
 
-def test_park_changes_to_t2_before_xy():
-    # The native Laguna post ends with T2 M06 then a rapid to park XY. The tool
-    # change must precede the park-XY move in the generated footer.
+def test_park_moves_to_xy_before_t2():
+    # Rich Auto rapids back to the last spindle XY after an M06, so the park-XY
+    # move must precede the end-of-job T2 M06 — otherwise the final change rapids
+    # across the bed from the last cut position. Same quirk as the cut-pass
+    # changes (see test_park_before_each_tool_change_when_configured).
     settings = {**SETTINGS, "advanced": {**SETTINGS["advanced"],
                                           "park_x_mm": 179.499,
                                           "park_y_mm": 1394.501}}
     p = _placed(SINGLE_T2, "A", 39)
     result = generate_master_gcode([p], settings)
     park = result[result.index("( ---- park ---- )"):]
-    assert park.index("T2 M06") < park.index("G00 X179.4990 Y1394.5010")
+    assert park.index("G00 X179.4990 Y1394.5010") < park.index("T2 M06")
 
 
 def test_output_park_includes_xy_when_configured():
@@ -404,6 +406,9 @@ def test_park_before_each_tool_change_when_configured():
     # Cut-pass tool changes: each must be immediately preceded by a park rapid.
     # The end-of-job park T2 M06 is the reverse (park rapid follows it), so it is
     # excluded here by checking only the region before the park block.
+    # The end-of-job park T2 M06 is also preceded by a park rapid (see
+    # test_park_moves_to_xy_before_t2); it lives in the park block, which is
+    # excluded here by checking only the region before it.
     cut_lines = [l for l in _cuts(result).splitlines() if l.strip()]
     for i, l in enumerate(cut_lines):
         if "M06" in l:
